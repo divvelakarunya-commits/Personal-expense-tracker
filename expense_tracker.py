@@ -6,62 +6,83 @@ from datetime import date
 FILE_NAME = "expenses.csv"
 
 
-# Create CSV file if it does not exist
+# Create CSV file
 def create_file():
     if not os.path.exists(FILE_NAME):
         with open(FILE_NAME, "w", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(["ID", "Date", "Category", "Amount", "Description"])
+            writer.writerow([
+                "ID", "Date", "Category", "Amount", "Description"
+            ])
 
 
-# Add a new expense
+# Add Expense
 def add_expense():
+    print("\n--- ADD EXPENSE ---")
+
+    category = input("Enter category: ")
+
     try:
-        category = input("Enter category: ")
         amount = float(input("Enter amount: "))
-        description = input("Enter description: ")
 
         if amount <= 0:
             print("Amount must be greater than zero.")
             return
 
-        with open(FILE_NAME, "r", newline="") as file:
-            rows = list(csv.reader(file))
-
-        expense_id = len(rows)
-
-        with open(FILE_NAME, "a", newline="") as file:
-            writer = csv.writer(file)
-            writer.writerow([
-                expense_id,
-                date.today(),
-                category,
-                amount,
-                description
-            ])
-
-        print("Expense added successfully!")
-
     except ValueError:
         print("Please enter a valid amount.")
-
-
-# Display all expenses
-def view_expenses():
-    with open(FILE_NAME, "r", newline="") as file:
-        reader = csv.reader(file)
-        rows = list(reader)
-
-    if len(rows) <= 1:
-        print("No expenses found.")
         return
 
-    print("\n--- All Expenses ---")
-    for row in rows:
-        print(" | ".join(row))
+    description = input("Enter description: ")
+
+    with open(FILE_NAME, "r", newline="") as file:
+        rows = list(csv.reader(file))
+
+    expense_id = max(
+        (int(row[0]) for row in rows[1:]
+         if row and row[0].isdigit()),
+        default=0
+    ) + 1
+
+    with open(FILE_NAME, "a", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow([
+            expense_id,
+            date.today(),
+            category,
+            amount,
+            description
+        ])
+
+    print("\nExpense added successfully!")
 
 
-# Calculate total expenses
+# View Expenses
+def view_expenses():
+    print("\n--- ALL EXPENSES ---")
+
+    with open(FILE_NAME, "r", newline="") as file:
+        reader = csv.reader(file)
+        next(reader, None)
+
+        found = False
+
+        for row in reader:
+            if row:
+                print(
+                    "ID:", row[0],
+                    "| Date:", row[1],
+                    "| Category:", row[2],
+                    "| Amount: Rs.", row[3],
+                    "| Description:", row[4]
+                )
+                found = True
+
+        if not found:
+            print("No expenses found.")
+
+
+# Total Expenses
 def total_expenses():
     total = 0
 
@@ -71,10 +92,10 @@ def total_expenses():
         for row in reader:
             total += float(row["Amount"])
 
-    print("Total Expenses: Rs.", round(total, 2))
+    print("\nTotal Expenses: Rs.", round(total, 2))
 
 
-# Display category-wise expenses
+# Category Summary
 def category_summary():
     categories = {}
 
@@ -85,18 +106,20 @@ def category_summary():
             category = row["Category"]
             amount = float(row["Amount"])
 
-            categories[category] = categories.get(category, 0) + amount
+            categories[category] = (
+                categories.get(category, 0) + amount
+            )
 
-    print("\n--- Category Summary ---")
+    print("\n--- CATEGORY SUMMARY ---")
 
     if not categories:
         print("No expenses found.")
     else:
         for category, amount in categories.items():
-            print(category, ":", round(amount, 2))
+            print(category, ": Rs.", round(amount, 2))
 
 
-# Delete an expense
+# Delete Expense
 def delete_expense():
     view_expenses()
 
@@ -108,7 +131,8 @@ def delete_expense():
             rows = list(reader)
 
         updated_rows = [
-            row for row in rows if row["ID"] != expense_id
+            row for row in rows
+            if row["ID"] != expense_id
         ]
 
         if len(updated_rows) == len(rows):
@@ -119,22 +143,30 @@ def delete_expense():
             fieldnames = [
                 "ID", "Date", "Category", "Amount", "Description"
             ]
-            writer = csv.DictWriter(file, fieldnames=fieldnames)
+
+            writer = csv.DictWriter(
+                file, fieldnames=fieldnames
+            )
+
             writer.writeheader()
             writer.writerows(updated_rows)
 
         print("Expense deleted successfully!")
 
-    except Exception as e:
-        print("Error:", e)
+    except (OSError, KeyError) as error:
+        print("Error:", error)
 
 
-# Main menu
+# Main Menu
 def main():
     create_file()
 
     while True:
-        print("\n===== PERSONAL EXPENSE TRACKER =====")
+
+        print("\n================================")
+        print("     PERSONAL EXPENSE TRACKER")
+        print("================================")
+
         print("1. Add Expense")
         print("2. View Expenses")
         print("3. Total Expenses")
@@ -142,24 +174,31 @@ def main():
         print("5. Delete Expense")
         print("6. Exit")
 
-        choice = input("Enter your choice: ")
+        choice = input("\nEnter your choice: ")
 
         if choice == "1":
             add_expense()
+
         elif choice == "2":
             view_expenses()
+
         elif choice == "3":
             total_expenses()
+
         elif choice == "4":
             category_summary()
+
         elif choice == "5":
             delete_expense()
+
         elif choice == "6":
-            print("Thank you for using Expense Tracker!")
+            print("\nThank you for using Personal Expense Tracker!")
             break
+
         else:
-            print("Invalid choice. Try again.")
+            print("\nInvalid choice! Please try again.")
 
 
+# Start Program
 if __name__ == "__main__":
     main()
