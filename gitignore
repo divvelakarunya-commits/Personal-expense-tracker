@@ -1,7 +1,0 @@
-__pycache__/
-*.pyc
-*.db
-*.csv
-.venv/
-.idea/
-.vscode/
