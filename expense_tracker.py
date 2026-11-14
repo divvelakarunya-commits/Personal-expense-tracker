@@ -1,202 +1,164 @@
-"""Personal Expense Tracker - a simple command-line app using SQLite.
 
-Usage examples:
-    python expense_tracker.py add 250 Food "Lunch with friends"
-    python expense_tracker.py add 1200 Transport "Train ticket" --date 2026-11-10
-    python expense_tracker.py list
-    python expense_tracker.py list --category Food --month 2026-11
-    python expense_tracker.py summary --month 2026-11
-    python expense_tracker.py delete 3
-    python expense_tracker.py export expenses.csv
-"""
-
-import argparse
 import csv
-import sqlite3
-import sys
-from datetime import date, datetime
-from pathlib import Path
+import os
+from datetime import date
 
-DB_FILE = Path(__file__).with_name("expenses.db")
+FILE_NAME = "expenses.csv"
 
 
-def get_connection():
-    """Open the database and make sure the table exists."""
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS expenses (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            amount      REAL NOT NULL CHECK (amount > 0),
-            category    TEXT NOT NULL,
-            description TEXT NOT NULL DEFAULT '',
-            spent_on    TEXT NOT NULL
-        )
-        """
-    )
-    return conn
+# Create CSV file if it does not exist
+def create_file():
+    if not os.path.exists(FILE_NAME):
+        with open(FILE_NAME, "w", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow(["ID", "Date", "Category", "Amount", "Description"])
 
 
-def valid_date(text):
-    """argparse type: accept YYYY-MM-DD only."""
+# Add a new expense
+def add_expense():
     try:
-        return datetime.strptime(text, "%Y-%m-%d").strftime("%Y-%m-%d")
+        category = input("Enter category: ")
+        amount = float(input("Enter amount: "))
+        description = input("Enter description: ")
+
+        if amount <= 0:
+            print("Amount must be greater than zero.")
+            return
+
+        with open(FILE_NAME, "r", newline="") as file:
+            rows = list(csv.reader(file))
+
+        expense_id = len(rows)
+
+        with open(FILE_NAME, "a", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow([
+                expense_id,
+                date.today(),
+                category,
+                amount,
+                description
+            ])
+
+        print("Expense added successfully!")
+
     except ValueError:
-        raise argparse.ArgumentTypeError(f"Invalid date '{text}'. Use YYYY-MM-DD.")
+        print("Please enter a valid amount.")
 
 
-def valid_month(text):
-    """argparse type: accept YYYY-MM only."""
-    try:
-        return datetime.strptime(text, "%Y-%m").strftime("%Y-%m")
-    except ValueError:
-        raise argparse.ArgumentTypeError(f"Invalid month '{text}'. Use YYYY-MM.")
+# Display all expenses
+def view_expenses():
+    with open(FILE_NAME, "r", newline="") as file:
+        reader = csv.reader(file)
+        rows = list(reader)
 
-
-def positive_amount(text):
-    try:
-        value = float(text)
-    except ValueError:
-        raise argparse.ArgumentTypeError(f"'{text}' is not a number.")
-    if value <= 0:
-        raise argparse.ArgumentTypeError("Amount must be greater than zero.")
-    return round(value, 2)
-
-
-# ----------------------------- commands -----------------------------------
-
-def add_expense(args):
-    with get_connection() as conn:
-        cur = conn.execute(
-            "INSERT INTO expenses (amount, category, description, spent_on) "
-            "VALUES (?, ?, ?, ?)",
-            (args.amount, args.category.title(), args.description, args.date),
-        )
-    print(f"Added expense #{cur.lastrowid}: {args.amount:.2f} "
-          f"[{args.category.title()}] on {args.date}")
-
-
-def build_filter(args):
-    """Build a WHERE clause from the optional --category / --month flags."""
-    clauses, params = [], []
-    if getattr(args, "category", None):
-        clauses.append("category = ? COLLATE NOCASE")
-        params.append(args.category)
-    if getattr(args, "month", None):
-        clauses.append("substr(spent_on, 1, 7) = ?")
-        params.append(args.month)
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    return where, params
-
-
-def list_expenses(args):
-    where, params = build_filter(args)
-    with get_connection() as conn:
-        rows = conn.execute(
-            f"SELECT * FROM expenses {where} ORDER BY spent_on DESC, id DESC",
-            params,
-        ).fetchall()
-
-    if not rows:
+    if len(rows) <= 1:
         print("No expenses found.")
         return
 
-    print(f"{'ID':>4}  {'Date':<10}  {'Category':<14}  {'Amount':>10}  Description")
-    print("-" * 60)
-    for r in rows:
-        print(f"{r['id']:>4}  {r['spent_on']:<10}  {r['category']:<14}  "
-              f"{r['amount']:>10.2f}  {r['description']}")
-    print("-" * 60)
-    print(f"{'Total':>32}  {sum(r['amount'] for r in rows):>10.2f}")
+    print("\n--- All Expenses ---")
+    for row in rows:
+        print(" | ".join(row))
 
 
-def summary(args):
-    where, params = build_filter(args)
-    with get_connection() as conn:
-        rows = conn.execute(
-            f"SELECT category, COUNT(*) AS n, SUM(amount) AS total "
-            f"FROM expenses {where} GROUP BY category ORDER BY total DESC",
-            params,
-        ).fetchall()
+# Calculate total expenses
+def total_expenses():
+    total = 0
 
-    if not rows:
+    with open(FILE_NAME, "r", newline="") as file:
+        reader = csv.DictReader(file)
+
+        for row in reader:
+            total += float(row["Amount"])
+
+    print("Total Expenses: Rs.", round(total, 2))
+
+
+# Display category-wise expenses
+def category_summary():
+    categories = {}
+
+    with open(FILE_NAME, "r", newline="") as file:
+        reader = csv.DictReader(file)
+
+        for row in reader:
+            category = row["Category"]
+            amount = float(row["Amount"])
+
+            categories[category] = categories.get(category, 0) + amount
+
+    print("\n--- Category Summary ---")
+
+    if not categories:
         print("No expenses found.")
-        return
-
-    grand_total = sum(r["total"] for r in rows)
-    title = f"Summary for {args.month}" if args.month else "Summary (all time)"
-    print(title)
-    print(f"{'Category':<14}  {'Count':>5}  {'Total':>10}  {'Share':>6}")
-    print("-" * 42)
-    for r in rows:
-        share = r["total"] / grand_total * 100
-        print(f"{r['category']:<14}  {r['n']:>5}  {r['total']:>10.2f}  {share:>5.1f}%")
-    print("-" * 42)
-    print(f"{'Total':<14}  {'':>5}  {grand_total:>10.2f}")
-
-
-def delete_expense(args):
-    with get_connection() as conn:
-        cur = conn.execute("DELETE FROM expenses WHERE id = ?", (args.id,))
-    if cur.rowcount:
-        print(f"Deleted expense #{args.id}.")
     else:
-        print(f"No expense with id {args.id}.")
-        sys.exit(1)
+        for category, amount in categories.items():
+            print(category, ":", round(amount, 2))
 
 
-def export_csv(args):
-    with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT id, spent_on, category, amount, description "
-            "FROM expenses ORDER BY spent_on, id"
-        ).fetchall()
-    with open(args.filename, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["id", "date", "category", "amount", "description"])
-        writer.writerows([tuple(r) for r in rows])
-    print(f"Exported {len(rows)} expenses to {args.filename}")
+# Delete an expense
+def delete_expense():
+    view_expenses()
+
+    try:
+        expense_id = input("\nEnter expense ID to delete: ")
+
+        with open(FILE_NAME, "r", newline="") as file:
+            reader = csv.DictReader(file)
+            rows = list(reader)
+
+        updated_rows = [
+            row for row in rows if row["ID"] != expense_id
+        ]
+
+        if len(updated_rows) == len(rows):
+            print("Expense ID not found.")
+            return
+
+        with open(FILE_NAME, "w", newline="") as file:
+            fieldnames = [
+                "ID", "Date", "Category", "Amount", "Description"
+            ]
+            writer = csv.DictWriter(file, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(updated_rows)
+
+        print("Expense deleted successfully!")
+
+    except Exception as e:
+        print("Error:", e)
 
 
-# ------------------------------ CLI setup ---------------------------------
-
-def build_parser():
-    parser = argparse.ArgumentParser(description="Personal Expense Tracker")
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    p_add = sub.add_parser("add", help="add a new expense")
-    p_add.add_argument("amount", type=positive_amount)
-    p_add.add_argument("category")
-    p_add.add_argument("description", nargs="?", default="")
-    p_add.add_argument("--date", type=valid_date,
-                       default=date.today().strftime("%Y-%m-%d"),
-                       help="YYYY-MM-DD (default: today)")
-    p_add.set_defaults(func=add_expense)
-
-    p_list = sub.add_parser("list", help="list expenses")
-    p_list.add_argument("--category")
-    p_list.add_argument("--month", type=valid_month, help="YYYY-MM")
-    p_list.set_defaults(func=list_expenses)
-
-    p_sum = sub.add_parser("summary", help="totals by category")
-    p_sum.add_argument("--month", type=valid_month, help="YYYY-MM")
-    p_sum.set_defaults(func=summary)
-
-    p_del = sub.add_parser("delete", help="delete an expense by id")
-    p_del.add_argument("id", type=int)
-    p_del.set_defaults(func=delete_expense)
-
-    p_exp = sub.add_parser("export", help="export all expenses to CSV")
-    p_exp.add_argument("filename")
-    p_exp.set_defaults(func=export_csv)
-
-    return parser
-
-
+# Main menu
 def main():
-    args = build_parser().parse_args()
-    args.func(args)
+    create_file()
+
+    while True:
+        print("\n===== PERSONAL EXPENSE TRACKER =====")
+        print("1. Add Expense")
+        print("2. View Expenses")
+        print("3. Total Expenses")
+        print("4. Category Summary")
+        print("5. Delete Expense")
+        print("6. Exit")
+
+        choice = input("Enter your choice: ")
+
+        if choice == "1":
+            add_expense()
+        elif choice == "2":
+            view_expenses()
+        elif choice == "3":
+            total_expenses()
+        elif choice == "4":
+            category_summary()
+        elif choice == "5":
+            delete_expense()
+        elif choice == "6":
+            print("Thank you for using Expense Tracker!")
+            break
+        else:
+            print("Invalid choice. Try again.")
 
 
 if __name__ == "__main__":
